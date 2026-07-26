@@ -17,35 +17,20 @@ env:
 jobs:
   build:
     name: ${{ matrix.artifact }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
         include:
-          # ---- Generic static aarch64 ---------------------------------------
           - artifact: viridithas-aarch64
-            target: aarch64-unknown-linux-musl
             features: ""
             flags: ""
-            bench: true
           - artifact: viridithas-aarch64-dotprod
-            target: aarch64-unknown-linux-musl
             features: ""
             flags: "-C target-feature=+dotprod"
-            bench: true
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU User Environment
-        run: |
-          sudo apt update && sudo apt install -y qemu-user
-
-      - name: install rust target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: install musl tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: fetch network
         shell: bash
@@ -71,21 +56,20 @@ jobs:
           RUSTFLAGS: ${{ matrix.flags }}
         run: |
           if [ -n "${{ matrix.features }}" ]; then
-            cargo build --release --target ${{ matrix.target }} --features "${{ matrix.features }}"
+            cargo build --release --features "${{ matrix.features }}"
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release
           fi
 
-      - name: bench via QEMU
-        if: matrix.bench
+      - name: bench
         shell: bash
         run: |
-          qemu-aarch64 "./target/${{ matrix.target }}/release/viridithas" bench
+          ./target/release/viridithas bench
 
       - name: stage artifact
         shell: bash
         run: |
-          cp "target/${{ matrix.target }}/release/viridithas" "${{ matrix.artifact }}"
+          cp target/release/viridithas "${{ matrix.artifact }}"
 
       - name: upload artifact
         uses: actions/upload-artifact@v4
