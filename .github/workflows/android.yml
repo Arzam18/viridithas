@@ -1,4 +1,4 @@
-name: Release binaries
+name: Build Viridithas for Android
 
 on:
   workflow_dispatch:
@@ -16,23 +16,23 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.artifact }}
-    runs-on: ubuntu-24.04-arm
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - artifact: viridithas-aarch64
-            features: ""
-            flags: ""
-          - artifact: viridithas-aarch64-dotprod
-            features: ""
-            flags: "-C target-feature=+dotprod"
-
+    name: viridithas-android-arm64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: fetch network
+      - name: Install Rust Toolchain & Android Target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Set up Android NDK & Clang Paths
+        run: |
+          echo "CC_aarch64_linux_android=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+          echo "CARGO_LINKER=aarch64-linux-android28-clang" >> $GITHUB_ENV
+
+      - name: Fetch Evaluation Network
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,37 +48,20 @@ jobs:
           size=$(wc -c < viridithas.nnue.zst | tr -d '[:space:]')
           echo "downloaded $size bytes"
           test "$size" -gt 1000000
-          echo "EVALFILE=viridithas.nnue.zst" >> "$GITHUB_ENV"
 
-      - name: build
-        shell: bash
-        env:
-          RUSTFLAGS: ${{ matrix.flags }}
-        run: |
-          if [ -n "${{ matrix.features }}" ]; then
-            cargo build --release --features "${{ matrix.features }}"
-          else
-            cargo build --release
-          fi
-
-      - name: bench
+      - name: Build for Android ARM64
         shell: bash
         run: |
-          ./target/release/viridithas bench
+          cargo build --release --target aarch64-linux-android
 
-      - name: stage artifact
+      - name: Stage Artifact
         shell: bash
         run: |
-          cp target/release/viridithas "${{ matrix.artifact }}"
+          mkdir -p dist/bin
+          cp target/aarch64-linux-android/release/viridithas dist/bin/viridithas-android-arm64
 
-      - name: upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
-
-      - name: attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ matrix.artifact }}
+          name: viridithas-android-arm64
+          path: dist/bin/viridithas-android-arm64
