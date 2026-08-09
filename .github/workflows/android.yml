@@ -26,11 +26,14 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Set up Android NDK & Clang Paths
+      - name: Configure Cargo for Android NDK Linker
         run: |
-          echo "CC_aarch64_linux_android=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" >> $GITHUB_ENV
-          echo "AR_aarch64_linux_android=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
-          echo "CARGO_LINKER=aarch64-linux-android28-clang" >> $GITHUB_ENV
+          mkdir -p .cargo
+          cat << EOF > .cargo/config.toml
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          ar = "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          EOF
 
       - name: Fetch Evaluation Network
         shell: bash
