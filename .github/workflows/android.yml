@@ -2,11 +2,11 @@ name: Build Viridithas for Android
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main", "master" ]
-    tags:
-      - "v*"
-  pull_request:
+    inputs:
+      uci_date:
+        description: "UCI version/date (e.g. 20260907)"
+        required: true
+        default: "20260907"
 
 permissions:
   contents: write
@@ -20,6 +20,77 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set UCI Version
+        shell: bash
+        env:
+          UCI_DATE: ${{ inputs.uci_date }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          version = os.environ["UCI_DATE"]
+
+          if not version.isdigit():
+              raise SystemExit("uci_date must contain digits only, e.g. 20260918")
+
+          if len(version) != 8:
+              raise SystemExit("uci_date must be exactly 8 digits, e.g. 20260918")
+
+          version_line = 'pub static VERSION: &str = env!("CARGO_PKG_VERSION");'
+          version_replacement = f'pub static VERSION: &str = "{version}";'
+
+          version_found = False
+          for path in Path(".").rglob("*.rs"):
+              if any(part in {".git", "target"} for part in path.parts):
+                  continue
+
+              text = path.read_text(encoding="utf-8")
+
+              if version_line in text:
+                  text = text.replace(version_line, version_replacement, 1)
+                  path.write_text(text, encoding="utf-8")
+                  print(f"Patched VERSION in {path}")
+                  version_found = True
+                  break
+
+          if not version_found:
+              raise SystemExit("Could not find Viridithas VERSION definition")
+
+          # Remove the automatic Git-hash suffix from the UCI version.
+          old_function = '''fn version() -> impl Display {
+              let ext = if cfg!(feature = "final-release") {
+                  String::new()
+              } else {
+                  format!("-{}", &GIT_HASH[..8.min(GIT_HASH.len())])
+              };
+              format!("{VERSION}{ext}")
+          }'''
+
+          new_function = '''fn version() -> impl Display {
+              VERSION
+          }'''
+
+          function_found = False
+          for path in Path(".").rglob("*.rs"):
+              if any(part in {".git", "target"} for part in path.parts):
+                  continue
+
+              text = path.read_text(encoding="utf-8")
+
+              if old_function in text:
+                  text = text.replace(old_function, new_function, 1)
+                  path.write_text(text, encoding="utf-8")
+                  print(f"Patched version() in {path}")
+                  function_found = True
+                  break
+
+          if not function_found:
+              raise SystemExit("Could not find Viridithas version() function")
+          PY
+
+          echo "UCI version set to: $UCI_DATE"
 
       - name: Install Rust Toolchain & Android Target
         uses: dtolnay/rust-toolchain@stable
