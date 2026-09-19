@@ -58,7 +58,6 @@ jobs:
           if not version_found:
               raise SystemExit("Could not find Viridithas VERSION definition")
 
-          # Remove the automatic Git-hash suffix from the UCI version.
           old_function = '''fn version() -> impl Display {
               let ext = if cfg!(feature = "final-release") {
                   String::new()
@@ -106,25 +105,21 @@ jobs:
           ar = "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           EOF
 
-      - name: Fetch Evaluation Network
+      - name: Fetch Evaluation Network & Decompress
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          url=$(curl -sSL --fail \
-            ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/cosmobobak/viridithas-networks/releases/latest" \
-            | grep -o '"browser_download_url": "[^"]*' | awk -F'"' '{print $4}' | head -n1)
-          echo "network url: $url"
-          test -n "$url"
-          curl -sSL --fail --retry 3 --retry-delay 5 "$url" -o viridithas.nnue.zst
-          size=$(wc -c < viridithas.nnue.zst | tr -d '[:space:]')
-          echo "downloaded $size bytes"
-          test "$size" -gt 1000000
+          sudo apt-get update && sudo apt-get install -y zstd
+          gh release download --repo cosmobobak/viridithas-networks --pattern "*.nnue.zst" --dir .
+          mv *.nnue.zst viridithas.nnue.zst
+          unzstd -f viridithas.nnue.zst -o viridithas.nnue
+          ls -la viridithas*
 
-      - name: Build for Android ARM64
+      - name: Build for Android ARM64 (NEON SIMD)
         shell: bash
+        env:
+          RUSTFLAGS: "-C target-feature=+neon"
         run: |
           cargo build --release --target aarch64-linux-android
 
