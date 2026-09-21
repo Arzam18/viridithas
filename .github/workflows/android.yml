@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       uci_date:
-        description: "UCI version/date (e.g. 20260919)"
+        description: "UCI version/date (e.g. 20260921)"
         required: true
-        default: "20260919"
+        default: "20260921"
 
 permissions:
   contents: write
