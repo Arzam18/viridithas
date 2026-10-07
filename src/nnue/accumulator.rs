@@ -32,7 +32,7 @@ mod simd {
         chess::{
             board::{Board, movegen::attacks_by_type},
             piece::{Colour, PieceType},
-            types::{File, Square},
+            types::Square,
         },
         nnue::{
             network::{
@@ -44,6 +44,14 @@ mod simd {
         },
     };
 
+    const MAX_REGISTERS: usize = 16;
+    const REGISTERS: usize = min!(ACC_LEN / I16_CHUNK, MAX_REGISTERS);
+    const UNROLL: usize = I16_CHUNK * REGISTERS;
+    const _: () = assert!(
+        ACC_LEN.is_multiple_of(UNROLL),
+        "ACC_LEN must be a multiple of the unroll"
+    );
+
     /// Apply add/subtract PSQT updates in place.
     pub fn vector_update_inplace_psqt(
         input: &mut Align<[i16; ACC_LEN]>,
@@ -51,8 +59,6 @@ mod simd {
         adds: &[PsqtFeatureIndex],
         subs: &[PsqtFeatureIndex],
     ) {
-        const REGISTERS: usize = 16;
-        const UNROLL: usize = I16_CHUNK * REGISTERS;
         // SAFETY: we never hold multiple mutable references, we never mutate immutable memory,
         // we use iterators to ensure that we're staying in-bounds, etc.
         unsafe {
@@ -108,9 +114,6 @@ mod simd {
     ) {
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
-
-        const REGISTERS: usize = 16;
-        const UNROLL: usize = I16_CHUNK * REGISTERS;
 
         if updates.add.is_empty() && updates.sub.is_empty() && updates.afore == updates.after {
             dst_acc.copy_from_slice(&**src_acc);
@@ -223,6 +226,7 @@ mod simd {
             _mm512_xor_si512,
         };
 
+        use crate::chess::types::File;
         use crate::nnue::network::feature::pawn_compressed_index;
 
         let orient = (if colour == Colour::Black { 56 } else { 0 })
@@ -369,9 +373,6 @@ mod simd {
     ) {
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
-
-        const REGISTERS: usize = 16;
-        const UNROLL: usize = I16_CHUNK * REGISTERS;
 
         let bbs = &board.state.bbs;
         let occ = bbs.occupied();
