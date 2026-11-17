@@ -125,8 +125,8 @@ const OPTIMISM_OFFSET: i32 = 196;
 const OPTIMISM_MATERIAL_BASE: i32 = 1869;
 const EVAL_POLICY_UPDATE_MAX: i32 = 94;
 const PROBCUT_SEE_SCALE: i32 = 266;
-const PROBCUT_ADA_OFFSET: i32 = 50;
 const PROBCUT_ADA_DIV: i32 = 300;
+const PROBCUT_ADA_MARGIN: i32 = 300;
 const PROBCUT_MIN_DEPTH: i32 = 3;
 const QUIET_CHECK_SEE_MARGIN: i32 = 175;
 
@@ -316,11 +316,17 @@ pub fn search_position(
         .stopped
         .store(false, Ordering::Relaxed);
 
+    let score = if best_thread.completed == 0 {
+        0
+    } else {
+        best_thread.score()
+    };
+
     (
         if thread_headers[0].board.turn() == Colour::White {
-            best_thread.score_scratch
+            score
         } else {
-            -best_thread.score_scratch
+            -score
         },
         Some(best_move),
     )
@@ -478,7 +484,11 @@ fn iterative_deepening<ThTy: SmpThreadType>(t: &mut ThreadData) {
 }
 
 fn dyn_max_depth(t: &ThreadData<'_>) -> usize {
-    t.info.clock.limits.depth().unwrap_or(MAX_DEPTH - 1)
+    t.info
+        .clock
+        .limits
+        .depth()
+        .map_or(MAX_DEPTH - 1, |d| d.min(MAX_DEPTH - 1))
 }
 
 /// Give a legal default move in the case where we don't have enough time to search.
@@ -712,6 +722,10 @@ pub fn quiescence<NT: NodeType>(t: &mut ThreadData, mut alpha: i32, beta: i32) -
         return mated_in(height);
     }
 
+    if t.info.stopped() {
+        return 0;
+    }
+
     if !is_decisive(best_score) && best_score > beta {
         best_score = i32::midpoint(best_score, beta);
     }
@@ -895,7 +909,7 @@ pub fn alpha_beta<NT: NodeType>(
         let tb_value = match wdl {
             WDL::Win => tb_win_in(height),
             WDL::Loss => tb_loss_in(height),
-            WDL::Draw => draw_score(t, t.info.nodes.get_buffer(), t.board.turn()),
+            WDL::Draw => draw_score(t, t.info.nodes.get_local(), t.board.turn()),
         };
 
         let tb_bound = match wdl {
@@ -1221,13 +1235,10 @@ pub fn alpha_beta<NT: NodeType>(
             // high value compared to pc_beta, we assume we can slice off
             // more of the tree. the idea of adaptive probcut comes from
             // https://github.com/cj5716.
-            let ada_depth = (depth_base
-                - ((qs_value - pc_beta - t.info.conf.probcut_ada_offset)
-                    / t.info.conf.probcut_ada_div)
-                    .clamp(0, PROBCUT_MIN_DEPTH))
-            .clamp(0, depth - 1);
+            let ada_depth = (depth_base - (qs_value - pc_beta) / t.info.conf.probcut_ada_div)
+                .clamp(0, depth - 1);
             // we need a higher beta if we’re searching more shallowly
-            let ada_beta = (pc_beta + (base_depth - ada_depth) * t.info.conf.probcut_ada_div)
+            let ada_beta = (pc_beta + (base_depth - ada_depth) * t.info.conf.probcut_ada_margin)
                 .min(MINIMUM_TB_WIN_SCORE - 1);
 
             // try to find (value, depth, beta).
@@ -1254,6 +1265,10 @@ pub fn alpha_beta<NT: NodeType>(
             };
 
             t.board.unmake_move(&mut t.nnue);
+
+            if t.info.stopped() {
+                return 0;
+            }
 
             if let Some((value, cut_depth, cut_beta)) = cut {
                 t.cache.store(
